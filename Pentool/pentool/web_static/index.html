@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Pentool — Live Console</title>
+
+<!-- libraries -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.3.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.181.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.181.0/examples/js/controls/OrbitControls.js"></script>
+
+<style>
+:root{
+  --bg:#0b1014; --panel:#0f1a1d; --muted:#cfece6; --accent:#00d6b4; --danger:#ff6b6b;
+}
+*{box-sizing:border-box}
+body{margin:0;height:100vh;background:linear-gradient(180deg,#041017,#08121a);color:var(--muted);font-family:Inter, system-ui, monospace}
+.layout{display:grid;grid-template-columns:340px 1fr 420px;gap:16px;padding:16px;height:100%}
+.panel{background:var(--panel);border-radius:10px;padding:12px;box-shadow:0 10px 30px rgba(0,0,0,0.6);display:flex;flex-direction:column;gap:10px}
+.header{display:flex;align-items:center;gap:10px}
+.logo{width:44px;height:44;border-radius:8px;background:linear-gradient(135deg,#00373a,#006a5f);display:flex;align-items:center;justify-content:center;font-weight:700;color:#000}
+.h1{font-size:16px;margin:0}
+.label{font-size:13px;color:#98e4d8;margin-bottom:6px}
+.input, select, textarea{background:transparent;border:1px solid rgba(255,255,255,0.04);padding:8px;border-radius:8px;color:var(--muted);width:100%}
+.row{display:flex;gap:8px}
+.btn{padding:8px 12px;border-radius:8px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:var(--muted);cursor:pointer}
+.btn.primary{border-color:var(--accent);box-shadow:0 6px 18px rgba(0,214,180,0.06)}
+.btn.warn{border-color:var(--danger);color:var(--danger)}
+.small{font-size:12px;color:#8fcfc6}
+
+/* center */
+.center{display:flex;flex-direction:column;gap:12px}
+.canvas-box{height:44vh;border-radius:8px;overflow:hidden;background:#041018;padding:6px}
+.chart-box{height:180px}
+
+/* right */
+.pre{background:#021617;padding:10px;border-radius:8px;color:#cfe;overflow:auto;max-height:58vh;font-size:13px}
+.table{width:100%;border-collapse:collapse}
+.table th{font-size:12px;color:#9fd;text-align:left;padding:6px}
+.table td{padding:6px;border-top:1px solid rgba(255,255,255,0.02);color:#cfe}
+.footer{font-size:12px;color:#88d7cc;text-align:center;margin-top:8px}
+@media (max-width:1200px){ .layout{grid-template-columns:1fr;grid-auto-rows:auto} .canvas-box{height:36vh} .pre{max-height:30vh} }
+</style>
+</head>
+<body>
+<div class="layout">
+
+  <!-- left controls -->
+  <aside class="panel">
+    <div class="header">
+      <div class="logo">PT</div>
+      <div>
+        <div class="h1">Pentool Console</div>
+        <div class="small">Mock & Real (use API token for real)</div>
+      </div>
+    </div>
+
+    <div>
+      <div class="label">Auth token (for real requests)</div>
+      <input id="auth" class="input" placeholder="X-PENTOOL-AUTH (optional)"/>
+    </div>
+
+    <div>
+      <div class="label">Target (IP or CIDR)</div>
+      <input id="target" class="input" value="127.0.0.1"/>
+    </div>
+
+    <div>
+      <div class="label">Ports</div>
+      <input id="ports" class="input" value="1-1024"/>
+    </div>
+
+    <div>
+      <div class="label">Actions</div>
+      <div class="row">
+        <button id="scan-mock" class="btn primary">Scan (mock)</button>
+        <button id="scan-real" class="btn warn">Scan (real)</button>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <button id="recon-mock" class="btn primary">Recon (mock)</button>
+        <button id="recon-real" class="btn warn">Recon (real)</button>
+      </div>
+    </div>
+
+    <div>
+      <div class="label">Utilities</div>
+      <div class="row">
+        <button id="list-reports" class="btn">List reports</button>
+        <button id="download-last" class="btn">Download last</button>
+      </div>
+      <div style="height:8px"></div>
+      <div class="row">
+        <button id="show-logs" class="btn">Show logs</button>
+        <button id="clear-logs" class="btn">Clear logs</button>
+      </div>
+    </div>
+
+    <div class="footer">Always run real scans only with explicit permission.</div>
+  </aside>
+
+  <!-- center: visualization -->
+  <main class="center">
+    <div class="panel">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div><strong>Topology</strong> <span id="host-count" class="small">0 hosts</span></div>
+        <div class="small">Click node for details</div>
+      </div>
+      <div class="canvas-box" id="three-wrap"></div>
+    </div>
+
+    <div class="panel" style="display:flex;gap:12px;align-items:flex-start">
+      <div style="flex:1">
+        <div style="display:flex;justify-content:space-between">
+          <strong>Open ports / host</strong>
+          <div class="small">Updated from latest response</div>
+        </div>
+        <div class="chart-box">
+          <canvas id="chart"></canvas>
+        </div>
+      </div>
+
+      <div style="width:320px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <strong>Jobs</strong>
+          <div class="small" id="jobs-count">0</div>
+        </div>
+        <div id="jobs" class="pre">No jobs yet.</div>
+      </div>
+    </div>
+  </main>
+
+  <!-- right: logs + raw -->
+  <aside class="panel">
+    <div>
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <strong>Live log</strong>
+        <div class="small">HTTP responses & activity</div>
+      </div>
+      <pre id="log" class="pre">Ready.</pre>
+    </div>
+
+    <div style="margin-top:10px">
+      <strong>Raw / headers</strong>
+      <pre id="raw" class="pre">No raw data</pre>
+    </div>
+  </aside>
+
+</div>
+
+<script>
+const API_SCAN = '/api/scan';
+const API_RECON = '/api/recon';
+const API_LOG = '/api/log';
+const API_LIST = '/api/list_reports';
+
+function appendLog(s){
+  const el = document.getElementById('log');
+  el.textContent = '[' + new Date().toLocaleTimeString() + '] ' + s + '\n' + el.textContent;
+}
+
+async function fetchJson(path, opts){
+  try{
+    const res = await fetch(path, opts);
+    const text = await res.text();
+    let body;
+    try{ body = JSON.parse(text); } catch(e){ body = text; }
+    document.getElementById('raw').textContent = JSON.stringify({ status: res.status, headers: Object.fromEntries(res.headers.entries()), body }, null, 2);
+    return { ok: res.ok, status: res.status, body };
+  }catch(e){
+    appendLog('Network error: ' + e.message);
+    return { ok:false, status:0, body: String(e) };
+  }
+}
+
+/* Chart */
+let chart;
+function initChart(){
+  const ctx = document.getElementById('chart').getContext('2d');
+  chart = new Chart(ctx, { type:'bar', data:{ labels:[], datasets:[{ label:'Open Ports', data:[], backgroundColor:'#00d6b4' }] }, options:{ responsive:true, maintainAspectRatio:false, scales:{ y:{ beginAtZero:true } } } });
+}
+function updateChart(labels, values){
+  chart.data.labels = labels;
+  chart.data.datasets[0].data = values;
+  chart.update();
+}
+
+/* Three.js */
+let scene, camera, renderer, controls, nodeGroup;
+function initThree(){
+  const wrap = document.getElementById('three-wrap');
+  renderer = new THREE.WebGLRenderer({ antialias:true });
+  renderer.setSize(wrap.clientWidth, wrap.clientHeight);
+  renderer.setClearColor(0x041018,1);
+  wrap.innerHTML = ''; wrap.appendChild(renderer.domElement);
+
+  scene = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera(60, wrap.clientWidth / wrap.clientHeight, 0.1, 1000);
+  camera.position.set(0,20,40);
+  controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+
+  const light = new THREE.DirectionalLight(0xffffff, 0.9); light.position.set(10,20,10); scene.add(light);
+  scene.add(new THREE.AmbientLight(0x404040, 0.8));
+
+  nodeGroup = new THREE.Group(); scene.add(nodeGroup);
+  animate();
+  window.addEventListener('resize', ()=>{ renderer.setSize(wrap.clientWidth, wrap.clientHeight); camera.aspect = wrap.clientWidth / wrap.clientHeight; camera.updateProjectionMatrix(); });
+}
+function animate(){ requestAnimationFrame(animate); controls.update(); renderer.render(scene, camera); }
+function clearNodes(){ while(nodeGroup.children.length) nodeGroup.remove(nodeGroup.children[0]); }
+function renderNodes(targets){
+  clearNodes();
+  const n = Math.max(1, targets.length);
+  const radius = Math.max(6, Math.min(24, n * 1.2));
+  targets.forEach((t,i)=>{
+    const tcp = t.open_ports || (t.ports ? t.ports : []);
+    const count = Array.isArray(tcp) ? tcp.length : Object.keys(tcp).length;
+    const geom = new THREE.SphereGeometry(0.7 + Math.min(count*0.05,1.4), 20, 20);
+    const color = count === 0 ? 0x10b981 : (count < 5 ? 0xf59e0b : 0xef4444);
+    const mat = new THREE.MeshStandardMaterial({ color });
+    const m = new THREE.Mesh(geom, mat);
+    const angle = (i/n) * Math.PI * 2;
+    m.position.set(Math.cos(angle)*radius, (Math.random()-0.5)*1.5, Math.sin(angle)*radius);
+    m.userData = { host: t.target || t.host || ('host'+i), ports: tcp, count };
+    nodeGroup.add(m);
+    const c = document.createElement('canvas'); c.width = 256; c.height = 48;
+    const cx = c.getContext('2d'); cx.fillStyle = 'rgba(255,255,255,0.9)'; cx.font='20px monospace'; cx.fillText(t.target || t.host || ('host'+i),10,30);
+    const tex = new THREE.CanvasTexture(c); const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map:tex })); sprite.scale.set(6,1.2,1); sprite.position.set(m.position.x, m.position.y+1.2, m.position.z);
+    nodeGroup.add(sprite);
+  });
+  document.getElementById('host-count').textContent = targets.length + ' hosts';
+}
+
+document.getElementById('scan-mock').onclick = async ()=>{
+  const target = document.getElementById('target').value;
+  const ports = document.getElementById('ports').value;
+  appendLog('Sending mock scan -> ' + target + ' ports:' + ports);
+  const res = await fetchJson(API_SCAN, { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ target, ports, mode:'mock' })});
+  if(res.ok){ appendLog('Scan mock success'); handleResult(res.body); await pushLog('Scan mock executed'); } else appendLog('Scan mock failed');
+};
+
+document.getElementById('recon-mock').onclick = async ()=>{
+  const target = document.getElementById('target').value;
+  appendLog('Sending mock recon -> ' + target);
+  const res = await fetchJson(API_RECON, { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ target, mode:'mock' })});
+  if(res.ok){ appendLog('Recon mock success'); handleResult(res.body); await pushLog('Recon mock executed'); } else appendLog('Recon mock failed');
+};
+
+document.getElementById('scan-real').onclick = async ()=>{
+  if(!confirm('Run real scan? ensure permission.')) return;
+  const token = document.getElementById('auth').value.trim();
+  if(!token){ alert('Auth token required for real scans'); return; }
+  const target = document.getElementById('target').value;
+  const ports = document.getElementById('ports').value;
+  appendLog('Submitting real scan -> ' + target);
+  const res = await fetchJson(API_SCAN, { method:'POST', headers:{ 'Content-Type':'application/json','X-PENTOOL-AUTH': token }, body: JSON.stringify({ target, ports, mode:'real' })});
+  appendLog('Real scan response status: ' + res.status);
+};
+
+document.getElementById('recon-real').onclick = async ()=>{
+  if(!confirm('Run real recon? ensure permission.')) return;
+  const token = document.getElementById('auth').value.trim();
+  if(!token){ alert('Auth token required for real recon'); return; }
+  appendLog('Submitting real recon');
+  const res = await fetchJson(API_RECON, { method:'POST', headers:{ 'Content-Type':'application/json','X-PENTOOL-AUTH': token }, body: JSON.stringify({ mode:'real' })});
+  appendLog('Real recon response status: ' + res.status);
+};
+
+document.getElementById('list-reports').onclick = async ()=>{
+  const token = document.getElementById('auth').value.trim();
+  const headers = token ? { 'X-PENTOOL-AUTH': token } : {};
+  const res = await fetchJson('/api/list_reports', { headers });
+  if(res.ok && res.body.reports) renderReports(res.body.reports);
+  else appendLog('List reports failed');
+};
+
+document.getElementById('download-last').onclick = async ()=>{
+  try{
+    const r = await fetch('/api/report.json');
+    if(!r.ok) throw new Error('No report');
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = 'recon_report.json'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    appendLog('Downloaded last report');
+  }catch(e){ appendLog('Download failed: '+e.message); }
+};
+
+document.getElementById('show-logs').onclick = async ()=>{
+  const r = await fetchJson(API_LOG);
+  if(r.ok) {
+    if(Array.isArray(r.body.logs)) document.getElementById('log').textContent = r.body.logs.join('\n\n');
+    appendLog('Fetched server logs');
+  }
+};
+document.getElementById('clear-logs').onclick = async ()=>{
+  const r = await fetchJson(API_LOG + '/clear', { method:'POST' });
+  if(r.ok) { document.getElementById('log').textContent = ''; appendLog('Cleared server logs'); }
+};
+
+async function pushLog(entry){
+  await fetch(API_LOG, { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ entry }) });
+}
+
+function handleResult(body){
+  let targets = [];
+  if(body.targets) targets = body.targets;
+  else if(body.target){
+    targets = [{ target: body.target, open_ports: body.open_ports || [], ports: body.ports || [] }];
+  } else {
+    targets = [{ target: body.target || 'localhost', open_ports: body.open_ports || (body.open_ports===0?[]:[22,80]) }];
+  }
+
+  const labels = targets.map(t => t.target || t.host || 'host');
+  const values = targets.map(t => Array.isArray(t.open_ports) ? t.open_ports.length : (t.ports ? (Array.isArray(t.ports)?t.ports.length:Object.keys(t.ports).length) : 0));
+  updateChart(labels, values);
+  renderNodes(targets);
+  document.getElementById('jobs').textContent = JSON.stringify(targets,null,2);
+  pushLog('Result processed: ' + (body.target||body.targets?.length||'multiple'));
+}
+
+function renderReports(list){
+  const el = document.getElementById('jobs');
+  if(!Array.isArray(list)) el.textContent = 'No reports';
+  else el.textContent = list.join('\n');
+}
+
+initChart();
+initThree();
+appendLog('UI initialized (mock).');
+
+</script>
+</body>
+</html>
